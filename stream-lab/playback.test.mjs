@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import {spawnSync} from 'node:child_process';
 import {PlaybackSessions} from './playback.mjs';
-import {sessionArgs,profiles} from './media.mjs';
+import {sessionArgs,profiles,httpReconnectArgs} from './media.mjs';
 import {IVFParser} from './static/ivf.mjs';
 const listen=server=>new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const close=server=>new Promise(resolve=>{server.close(resolve);server.closeAllConnections();});
@@ -52,3 +52,5 @@ test('channel without audio keeps video playing', {timeout:15000},async()=>{
 });
 
 test('all resolution and framerate combinations are supported with a 20 fps minimum',()=>{for(const height of [360,480,540,720,1080])for(const fps of [20,24,25,30,50,60]){const args=sessionArgs(undefined,'webcodecs',true,{profile:`${height}p-${fps}`});assert.equal(args[args.indexOf('-vf')+1],`fps=${fps},scale=-2:${height}:flags=fast_bilinear`);}for(const preset of Object.values(profiles))assert.ok(preset.fps>=20);});
+
+test('older FFmpeg builds only receive supported HTTP reconnect options',()=>{const options=httpReconnectArgs('  -reconnect <boolean>\n  -reconnect_streamed <boolean>\n  -reconnect_at_eof <boolean>\n');assert.ok(options.includes('-reconnect'));assert.ok(!options.includes('-reconnect_delay_total_max'));assert.deepEqual(httpReconnectArgs(''),[]);});

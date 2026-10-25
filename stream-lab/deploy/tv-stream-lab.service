@@ -7,14 +7,16 @@ Wants=network-online.target
 Type=simple
 User=tvstream
 Group=tvstream
-WorkingDirectory=/opt/tv-stream-lab-v2
+WorkingDirectory=/opt/tv-stream-lab-v3
 Environment=NODE_ENV=production
 Environment=HOST=127.0.0.1
 Environment=PORT=8787
 Environment=DATA_DIR=/var/lib/tv-stream-lab
+# Optional: a missing helper automatically hides the YouTube integration.
+Environment=YT_DLP_PATH=/opt/tesla-ytdlp/current/yt-dlp
 StateDirectory=tv-stream-lab
 StateDirectoryMode=0700
-ExecStart=/opt/tv-node/bin/node /opt/tv-stream-lab-v2/server.mjs
+ExecStart=/opt/tv-node/bin/node /opt/tv-stream-lab-v3/server.mjs
 Restart=always
 RestartSec=3
 TimeoutStopSec=10

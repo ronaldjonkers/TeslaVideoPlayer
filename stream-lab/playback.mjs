@@ -6,9 +6,9 @@ import {sessionArgs,profiles} from './media.mjs';
 // extra provider connections, and a stalled audio player cannot block video.
 export class PlaybackSessions {
  constructor({onDiagnostic}={}){this.sessions=new Map();this.onDiagnostic=onDiagnostic;}
- create(source,mode,demo,{profile='540p-20',audio=true,live=true,offset=0,headers}={}){
+ create(source,mode,demo,{profile='540p-20',audio=true,live=true,offset=0,headers,audioSource}={}){
   if(!Object.hasOwn(profiles,profile))throw Error('Onbekend kwaliteitsprofiel');
-  const session={id:randomBytes(24).toString('hex'),source,mode,demo,profile,audio,live,offset,headers,child:null,video:null,audioResponse:null,bytes:0,audioBytes:0,started:Date.now(),reason:null,reconnects:0};
+  const session={id:randomBytes(24).toString('hex'),source,mode,demo,profile,audio,live,offset,headers,audioSource,child:null,video:null,audioResponse:null,bytes:0,audioBytes:0,started:Date.now(),reason:null,reconnects:0};
   session.timer=setTimeout(()=>this.close(session,'Geen beeldverbinding geopend'),15000);session.timer.unref();
   this.sessions.set(session.id,session);return session;
  }
@@ -22,7 +22,7 @@ export class PlaybackSessions {
  attachVideo(session,res){
   if(session.child)throw Error('Deze afspeelsessie is al geopend');
   clearTimeout(session.timer);session.video=res;
-  const child=spawn(process.env.FFMPEG_PATH||'ffmpeg',sessionArgs(session.source,session.mode,session.demo,{profile:session.profile,audio:session.audio,live:session.live,offset:session.offset,headers:session.headers}),{stdio:['ignore','pipe','pipe','pipe']});session.child=child;
+  const child=spawn(process.env.FFMPEG_PATH||'ffmpeg',sessionArgs(session.source,session.mode,session.demo,{profile:session.profile,audio:session.audio,live:session.live,offset:session.offset,headers:session.headers,audioSource:session.audioSource}),{stdio:['ignore','pipe','pipe','pipe']});session.child=child;
   let opened=false;
   session.timer=setTimeout(()=>{if(!opened){if(!res.headersSent){res.writeHead(504,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'De bron levert binnen 30 seconden geen beeld.'}));}this.close(session,'Geen beeld ontvangen');}},30000);session.timer.unref();
   child.stdout.on('data',chunk=>{

@@ -5,8 +5,10 @@ De actuele gebruikersapplicatie. Zie [de hoofd-README](../README.md) voor instal
 ## Structuur
 
 - `server.mjs`: HTTP-server, authenticatie, bronnen per gebruiker en eigenaarscontrole voor afspeelsessies.
-- `store.mjs`: SQLite, scrypt-wachtwoorden, sessies, versleutelde brongegevens, voorkeuren, favorieten en kijkposities.
+- `store.mjs`: SQLite, scrypt-wachtwoorden, sessies, versleutelde brongegevens, voorkeuren, favorieten, geschiedenis en kijkposities.
 - `plex.mjs`: Plex-aanmelding, serverkoppelingen, metadata, bibliotheken, afbeeldingen en tijdlijnupdates.
+- `youtube.mjs`: optionele openbare YouTube-video’s via een geïsoleerde yt-dlp-helper.
+- `manage.mjs`: lokaal accountoverzicht en wachtwoordrecovery via stdin.
 - `network.mjs`: begrensde bronverzoeken en controle van bronadressen.
 - `playback.mjs` / `media.mjs`: één FFmpeg-bronverbinding voor beeld en audio, kwaliteitsprofielen en herstel.
 - `static/player.js`: canvas- en GPU-weergave, audio, frames overslaan en hervatten.
@@ -27,3 +29,5 @@ De standaard is ImageBitmap, 540p en 20 fps. Elke gebruiker kan de methode en st
 Audio loopt via een audio-element, beeld via canvas. Een beëindigde of vastgelopen audioklok houdt het beeld niet permanent tegen. Live-bronnen krijgen automatische herverbindingspogingen; VOD-bestanden eindigen normaal. Stoppen en uitloggen ruimen afspeelsessies op.
 
 Plex vereist een eigen account en een bereikbare Plex Media Server. Koppelen kan via de Plex-aanmeldpagina of handmatig met serveradres en token. De app bewaart kijkposities per gebruiker en meldt de tijdlijn ook aan Plex. Er is geen wachtwoordherstel via e-mail en er zijn geen ondertitelselectie- of castfuncties geïmplementeerd.
+
+De generieke Linux-installer staat in `../install.sh` en `../scripts/install.py`. Hij genereert eigen configuraties; `deploy/` bevat oudere handmatige voorbeelden. De actuele installatie- en beheerhandleidingen staan in `../docs/`.

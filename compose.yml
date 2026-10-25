@@ -1,0 +1,35 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        YOUTUBE: ${ENABLE_YOUTUBE:-false}
+    restart: unless-stopped
+    volumes:
+      - media_data:/var/lib/tesla-media
+    networks:
+      - media
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/container.Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - media
+    depends_on:
+      app:
+        condition: service_healthy
+networks:
+  media:
+volumes:
+  media_data:
+  caddy_data:
+  caddy_config:

@@ -13,3 +13,9 @@
 **/*access.json
 **/.htpasswd
 *.log
+
+**/__pycache__/
+*.pyc
+backups/
+
+!.env.example

@@ -4,6 +4,8 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {Store} from './store.mjs';
 import {Plex} from './plex.mjs';
+import {YouTube,youtubeId} from './youtube.mjs';
+const youtube=new YouTube({imageBase:process.env.ALLOW_PRIVATE_NETWORKS==='1'?process.env.YT_TEST_IMAGE_BASE:undefined});
 import {upstream,validUrl} from './network.mjs';
 import {parsePlaylist} from './playlist.mjs';
 import {profiles} from './media.mjs';
@@ -23,19 +25,27 @@ async function playlistItems(user,p,refresh=false){if(!refresh&&p.updated&&p.upd
 async function channels(user){const lists=store.playlists(user.id);const results=await Promise.allSettled(lists.map(p=>playlistItems(user,store.playlist(user.id,p.id))));return {items:results.flatMap(x=>x.status==='fulfilled'?x.value:[]),errors:results.flatMap((x,i)=>x.status==='rejected'?[{name:lists[i].name,error:'Laden mislukt. Controleer de URL of probeer te vernieuwen.'}]:[])};}
 function ownedSession(user,id){const session=playback.get(id);return session?.userId===user.id?session:null;}
 const server=http.createServer(async(req,res)=>{
- res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','same-origin');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+ res.setHeader('Cache-Control','no-store');res.setHeader('Vary','Cookie');res.setHeader('Referrer-Policy','same-origin');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
  let user;
  try{
  const url=new URL(req.url,'http://localhost'),route=url.pathname;
  if(req.method!=='GET'&&req.method!=='HEAD'&&req.headers.origin&&req.headers.origin!==`${req.headers['x-forwarded-proto']==='https'?'https':'http'}://${req.headers.host}`)return json(res,403,{error:'Dit verzoek komt van een andere website.'});
  user=store.authenticate(token(req));
- if(route==='/api/auth/register'&&req.method==='POST'){limit(req,'register',10);const data=await body(req),account=store.createUser(String(data.username||'').trim(),data.name,data.password);setCookie(req,res,store.session(account.id));return json(res,201,{user:store.publicUser(account)});}
- if(route==='/api/auth/login'&&req.method==='POST'){limit(req,'login',30);const data=await body(req),account=store.login(data.username,data.password);setCookie(req,res,store.session(account.id));return json(res,200,{user:store.publicUser(account)});}
+ if(route==='/api/auth/register'&&req.method==='POST'){limit(req,'register',10);const data=await body(req),account=store.createUser(String(data.username||'').trim(),data.name,data.password);setCookie(req,res,store.session(account.id));return json(res,201,{user:{...store.publicUser(account),features:{youtube:youtube.available}}});}
+ if(route==='/api/auth/login'&&req.method==='POST'){limit(req,'login',30);const data=await body(req),account=store.login(data.username,data.password);setCookie(req,res,store.session(account.id));return json(res,200,{user:{...store.publicUser(account),features:{youtube:youtube.available}}});}
  if(route.startsWith('/api/')||route==='/audio'){
   if(!user)return json(res,401,{error:'Log in om je media te openen.'});
-  if(route==='/api/auth/me')return json(res,200,{user:store.publicUser(user)});
+  if(route==='/api/auth/me')return json(res,200,{user:{...store.publicUser(user),features:{youtube:youtube.available}}});
   if(route==='/api/auth/logout'&&req.method==='POST'){for(const session of [...playback.sessions.values()])if(session.authId===user.authId)playback.close(session,'Uitgelogd');store.logout(token(req));setCookie(req,res,'');return json(res,200,{ok:true});}
   if(route==='/api/auth/password'&&req.method==='POST'){const data=await body(req);store.changePassword(user,data.current,data.password);return json(res,200,{ok:true});}
+  if(route==='/api/home'){
+   const records=store.history(user.id),all=records.some(x=>x.kind==='tv')?await channels(user):{items:[]},favs=store.favorites(user.id);
+   const items=records.flatMap(row=>{if(row.kind==='youtube')return [{...row.details,kind:'youtube',position:row.details.position>=row.details.duration-3?0:row.details.position,viewedAt:row.viewed}];if(row.kind==='tv'){const channel=all.items.find(x=>x.id===row.source_id);return channel?[{...publicChannel(channel,favs),kind:'tv',viewedAt:row.viewed}]:[];}const connection=store.plex(user.id,row.connection_id);if(!connection)return [];const progress=store.progress(user.id,row.connection_id,row.item_id),item={...row.details};if(progress)item.position=progress.position>=progress.duration-3?0:progress.position;return [{...item,kind:'plex',connectionId:row.connection_id,viewedAt:row.viewed}];});
+   return json(res,200,{items,name:user.name});
+  }
+  if(route==='/api/history/view'&&req.method==='POST'){
+   const session=ownedSession(user,(await body(req)).session);if(!session?.history)throw Error('Geen actieve afspeelsessie.');const h=session.history;store.viewed(user.id,h.kind,h.sourceId,h.connectionId,h.itemId,h.details);return json(res,200,{ok:true});
+  }
   if(route==='/api/settings'&&req.method==='POST')return json(res,200,{settings:store.settings(user.id,await body(req))});
   if(route==='/api/tv/playlists'){
    if(req.method==='GET')return json(res,200,{playlists:store.playlists(user.id)});
@@ -48,6 +58,10 @@ const server=http.createServer(async(req,res)=>{
   if(route==='/api/tv/channels'){const all=await channels(user),favs=store.favorites(user.id),query=(url.searchParams.get('q')||'').toLowerCase(),group=url.searchParams.get('group'),list=url.searchParams.get('playlist'),favorite=url.searchParams.get('favorites')==='1',page=Math.max(0,Math.min(10000,Number(url.searchParams.get('page'))||0));const filtered=all.items.filter(x=>(!list||x.playlistId===list)&&(!favorite||favs.has(x.id))&&(!group||x.group===group)&&(!query||(x.name+' '+x.group).toLowerCase().includes(query)));return json(res,200,{items:filtered.slice(page*72,page*72+72).map(x=>publicChannel(x,favs)),total:filtered.length,page,groups:[...new Set(all.items.map(x=>x.group).filter(Boolean))].sort(),errors:all.errors});}
   if(route==='/api/tv/favorite'&&req.method==='POST'){const data=await body(req),all=await channels(user);if(!all.items.some(x=>x.id===data.id))throw Error('Kanaal niet gevonden.');store.favorite(user.id,data.id,!!data.favorite);return json(res,200,{ok:true});}
   if(route==='/api/tv/logo'){const all=await channels(user),item=all.items.find(x=>x.id===url.searchParams.get('id'));if(!item?.logo){res.writeHead(404);return res.end();}try{const image=await upstream(item.logo,{allowPrivate:!!user.admin,limit:2*1024*1024,timeout:8000});if(!image.type.startsWith('image/'))throw Error();res.writeHead(200,{'Content-Type':image.type,'Cache-Control':'private, max-age=86400','Content-Security-Policy':"default-src 'none'; sandbox"});return res.end(image.bytes);}catch{res.writeHead(404);return res.end();}}
+  if(route==='/api/youtube/search'){limit(req,'youtube',60);return json(res,200,await youtube.search(url.searchParams.get('q')));}
+  if(route==='/api/youtube/item'){const data=youtube.public(await youtube.info(url.searchParams.get('id'))),history=store.historyItem(user.id,'youtube',data.id);if(history)data.position=history.position>=history.duration-3?0:history.position;return json(res,200,data);}
+  if(route==='/api/youtube/image'){const image=await youtube.image(url.searchParams.get('id'));res.writeHead(200,{'Content-Type':image.type,'Cache-Control':'private, max-age=86400'});return res.end(image.bytes);}
+  if(route==='/api/youtube/progress'&&req.method==='POST'){const data=await body(req),id=youtubeId(data.itemId),position=Number(data.position),duration=Number(data.duration);if(!id||!Number.isFinite(position)||!Number.isFinite(duration)||position<0||position>duration+120||duration<0||duration>864000)throw Error('Ongeldige afspeelpositie.');store.historyProgress(user.id,'youtube',id,position,duration);return json(res,200,{saved:true});}
   if(route==='/api/plex/connections'){
    if(req.method==='GET')return json(res,200,{connections:store.plexList(user.id)});const data=await body(req);
    if(req.method==='DELETE'){store.deletePlex(user.id,data.id);return json(res,200,{ok:true});}
@@ -60,16 +74,17 @@ const server=http.createServer(async(req,res)=>{
   if(route==='/api/plex/browse')return json(res,200,await plex.browse(user,url.searchParams.get('connection'),{section:url.searchParams.get('section'),query:url.searchParams.get('q'),parent:url.searchParams.get('parent'),page:url.searchParams.get('page'),continueWatching:url.searchParams.get('continue')==='1'}));
   if(route==='/api/plex/item')return json(res,200,(await plex.metadata(user,url.searchParams.get('connection'),url.searchParams.get('id'))).public);
   if(route==='/api/plex/progress'&&req.method==='POST')return json(res,200,await plex.progress(user,await body(req)));
-  if(route==='/api/plex/image'){const image=await plex.image(user,url.searchParams.get('connection'),url.searchParams.get('key')||'');if(!image.type.startsWith('image/')){res.writeHead(404);return res.end();}res.writeHead(200,{'Content-Type':image.type,'Cache-Control':'private, max-age=3600','Content-Security-Policy':"default-src 'none'; sandbox"});return res.end(image.bytes);}
+  if(route==='/api/plex/image'){const image=await plex.image(user,url.searchParams.get('connection'),url.searchParams.get('key')||'',url.searchParams.get('id'));if(!image.type.startsWith('image/')){res.writeHead(404);return res.end();}res.writeHead(200,{'Content-Type':image.type,'Cache-Control':image.fallback?'private, max-age=60':'private, max-age=3600','Content-Security-Policy':"default-src 'none'; sandbox"});return res.end(image.bytes);}
   if(route==='/api/session'&&req.method==='POST'){
    const data=await body(req),method=data.method||user.settings.method,mode=['webcodecs','webgl'].includes(method)?'webcodecs':'mjpeg';
    if(!['bitmap','mjpeg','webcodecs','webgl'].includes(method))throw Error('Kies een geldige afspeelmethode.');
    const profile=data.profile||`${user.settings.resolution}p-${user.settings.fps}`;if(!Object.hasOwn(profiles,profile))throw Error('Kies een geldige beeldkwaliteit.');
    if([...playback.sessions.values()].filter(x=>x.userId===user.id).length>=3)throw Error('Stop eerst een van je andere spelers.');if(playback.sessions.size>=12)throw Error('De server heeft momenteel te veel actieve spelers.');
-   let source,demo=data.kind==='demo',metadata=null,offset=0,headers,live=true;
-   if(data.kind==='plex'){const media=await plex.media(user,data.connectionId,data.itemId);source=media.source;headers=media.headers;metadata=media.public;offset=Math.max(0,Math.min(Number(data.offset)||0,metadata.duration));live=false;}
+   let source,demo=data.kind==='demo',metadata=null,offset=0,headers,audioSource,live=true;
+   if(data.kind==='youtube'){const media=await youtube.media(data.itemId);source=media.source;audioSource=media.audioSource;headers=media.headers;metadata=media.metadata;data.itemId=metadata.id;offset=Math.max(0,Math.min(Number(data.offset)||0,metadata.duration));live=false;}
+   else if(data.kind==='plex'){const media=await plex.media(user,data.connectionId,data.itemId);source=media.source;headers=media.headers;metadata=media.public;offset=Math.max(0,Math.min(Number(data.offset)||0,metadata.duration));live=false;}
    else if(!demo){const all=await channels(user),channel=all.items.find(x=>x.id===data.id);if(!channel)throw Error('Kanaal niet gevonden.');source=(await validUrl(channel.url,!!user.admin)).href;metadata=publicChannel(channel,store.favorites(user.id));}
-   const session=playback.create(source,mode,demo,{profile,audio:data.audio!==false,live,offset,headers});session.userId=user.id;session.authId=user.authId;
+   const session=playback.create(source,mode,demo,{profile,audio:data.audio!==false,live,offset,headers,audioSource});session.userId=user.id;session.authId=user.authId;if(!demo)session.history={kind:live?'tv':data.kind,sourceId:live?data.id:(data.kind==='youtube'?data.itemId:data.connectionId+':'+data.itemId),connectionId:data.kind==='plex'?data.connectionId:null,itemId:live?null:String(data.itemId),details:live?metadata:{...metadata,position:offset}};
    return json(res,200,{session:session.id,fps:profiles[profile].fps,metadata,offset});
   }
   if(route==='/audio'){const session=ownedSession(user,url.searchParams.get('session'));if(!session){res.writeHead(404);return res.end();}playback.attachAudio(session,res);return;}

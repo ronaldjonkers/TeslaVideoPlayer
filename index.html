@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video-afspeelmethoden — testpagina</title>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.3/dist/mp4box.all.min.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #0f1115; color: #e6e6e6; line-height: 1.5; }
+  header { max-width: 920px; margin: 0 auto; padding: 24px 16px 8px; }
+  h1 { font-size: 1.4rem; margin: 0 0 6px; }
+  main { max-width: 920px; margin: 0 auto; padding: 8px 16px 48px; display: flex; flex-direction: column; gap: 16px; }
+  .card { background: #171a21; border: 1px solid #262b36; border-radius: 12px; padding: 16px; }
+  h2 { font-size: 1.05rem; margin: 0 0 6px; }
+  p { margin: 0 0 10px; color: #aab3c0; }
+  code { background: #0b0d12; padding: 1px 5px; border-radius: 5px; font-size: .85em; }
+  video, canvas { width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 8px; display: block; }
+  label { display: block; font-size: .9rem; color: #9aa4b2; margin: 8px 0; }
+  input[type=url], input[type=search], select { width: 100%; margin-top: 4px; padding: 8px 10px; border-radius: 8px; border: 1px solid #2c3340; background: #0b0d12; color: #e6e6e6; font-size: .9rem; }
+  button { padding: 8px 14px; border-radius: 8px; border: 1px solid #3a4356; background: #232a38; color: #e6e6e6; cursor: pointer; font-size: .9rem; }
+  button:hover { background: #2b3345; }
+  .controls { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .status { margin-top: 10px; padding: 6px 10px; border-radius: 8px; font-size: .85rem; font-family: ui-monospace, SFMono-Regular, monospace; background: #0b0d12; border: 1px solid #2c3340; }
+  .status.ok  { border-color: #2ea043; color: #7ee787; }
+  .status.err { border-color: #f85149; color: #ffa198; }
+  .status.wait{ border-color: #9a6700; color: #e3b341; }
+  .hidden-video { position: fixed; left: -10000px; top: 0; width: 2px; height: 2px; opacity: 0; pointer-events: none; }
+  .hint { font-size: .8rem; color: #8b949e; margin-top: 6px; }
+  .sim-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 6px 16px; margin-top: 8px; }
+  .sim-grid label { display: flex; align-items: center; gap: 8px; margin: 0; color: #c9d1d9; font-size: .9rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Video-afspeelmethoden — testpagina</h1>
+  <p>Vier manieren waarop video technisch buiten een simpele "blokkeer het <code>&lt;video&gt;</code>-element"-check valt.
+     Per methode een grote startknop en een statuslampje. Belangrijk verschil: methodes 1–3 gebruiken onder water
+     <em>ook</em> een <code>&lt;video&gt;</code>-element en omzeilen alleen oppervlakkige checks (src-filters,
+     zichtbaarheid, autoplay-beleid); methode 4 (WebCodecs) decodeert volledig zonder <code>&lt;video&gt;</code>-element.
+     Gebruik dit om browsers te testen — nooit tijdens het rijden.</p>
+</header>
+
+<main>
+
+  <section class="card">
+    <h2>Online M3U-kanalenlijst</h2>
+    <label>URL van de M3U-lijst<input type="url" id="playlistUrl" placeholder="https://aanbieder.example/playlist.m3u" autocomplete="off"></label>
+    <div class="controls"><button id="loadPlaylist">Laad kanalen</button></div>
+    <div class="status wait" id="playlistStatus" role="status">Voer een online M3U-lijst in.</div>
+    <label>Zoek op kanaal of groep<input type="search" id="channelSearch" placeholder="Zoek een kanaal…" disabled></label>
+    <label>Kies een kanaal<select id="channelSelect" size="8" disabled style="width:100%"></select></label>
+    <p id="selectedChannel" class="hint">Nog geen kanaal gekozen.</p>
+    <p class="hint">Het gekozen kanaal wordt gebruikt voor de referentie-, canvas- en MSE-test. Deze laatste twee vereisen HLS; sommige aanbieders leveren MPEG-TS. WebCodecs vereist een progressieve MP4; WebRTC vereist een afzonderlijke WHEP-bron. Streamverkeer moet CORS toestaan.</p>
+    <h2>Stream-configuratie</h2>
+    <label>HLS-stream (.m3u8) voor de canvas- en MSE-methode:
+      <input type="url" id="hlsUrl" value="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8">
+    </label>
+    <p class="hint">Standaard staat een legitieme publieke teststream. Je kunt hier elke andere .m3u8-stream invoeren
+       waar je recht op hebt — de streamserver moet dan wel CORS toestaan, anders weigert de browser het laden.</p>
+    <label>Progressieve MP4 (H.264) voor de WebCodecs-methode:
+      <input type="url" id="mp4Url" value="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4">
+    </label>
+    <p class="hint">WebCodecs kan geen HLS aan; gebruik hier een gewone progressieve MP4. Vereist https of localhost
+       (secure context) en WebCodecs-ondersteuning in de browser.</p>
+  </section>
+
+  <section class="card">
+    <h2>0. Referentie: gewoon &lt;video&gt;-element</h2>
+    <p>Directe <code>src</code> op het element. Als de browser "gewone" video blokkeert, moet deze kaart falen —
+       dat bevestigt dat de blokkade actief is.</p>
+    <video id="baseVideo" controls muted playsinline
+           src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"></video>
+    <div class="status wait" id="status-baseline">⏸ wacht — druk op play of start</div>
+  </section>
+
+  <section class="card">
+    <h2>1. Canvas-methode</h2>
+    <p>Een verborgen, muted <code>&lt;video&gt;</code> (HLS via hls.js) wordt frame-voor-frame met
+       <code>drawImage</code> naar dit canvas gekopieerd. Wat je ziet is een 2D-canvas, geen video-element.</p>
+    <canvas id="cv" width="640" height="360"></canvas>
+    <div class="controls"><button id="btnCanvas">▶ Start canvas-methode</button></div>
+    <div class="status wait" id="status-canvas">⏸ wacht</div>
+  </section>
+
+  <section class="card">
+    <h2>2. MSE (Media Source Extensions)</h2>
+    <p>Videosegmenten worden via JavaScript aan een <code>MediaSource</code>-object gevoed (standaard hls.js).
+       De <code>&lt;video&gt;</code> krijgt alleen een <code>blob:</code>-URL van dat MediaSource en geen
+       directe stream-src — het netwerkverkeer loopt via fetch/XHR, niet via de media-loader.</p>
+    <video id="mseVideo" controls muted playsinline></video>
+    <div class="controls"><button id="btnMse">▶ Start MSE-methode</button></div>
+    <div class="status wait" id="status-mse">⏸ wacht</div>
+  </section>
+
+  <section class="card">
+    <h2>3. WebRTC / MediaStream</h2>
+    <p>Video arriveert als <code>MediaStream</code> op <code>srcObject</code> — technisch geen klassiek
+       "video-afspelen" vanuit een media-resource. Knop A genereert lokaal een teststream; knop B verbindt
+       met een eigen WHEP-endpoint via een echte <code>RTCPeerConnection</code>.</p>
+    <video id="rtcVideo" muted playsinline></video>
+    <div class="controls">
+      <button id="btnRtcLocal">▶ Start lokale MediaStream</button>
+    </div>
+    <label>WHEP-endpoint (optioneel, voor echte RTCPeerConnection):
+      <input type="url" id="whepUrl" placeholder="https://jouw-server.example/whep/stream">
+    </label>
+    <div class="controls"><button id="btnWhep">▶ Verbind via RTCPeerConnection (WHEP)</button></div>
+    <div class="status wait" id="status-rtc">⏸ wacht</div>
+  </section>
+
+  <section class="card">
+    <h2>4. WebCodecs — zonder &lt;video&gt;-element</h2>
+    <p>In dit pad staat er <strong>geen enkel <code>&lt;video&gt;</code>-element</strong>: de MP4 wordt met
+       <code>fetch</code> opgehaald, met mp4box.js gedemuxt, met <code>VideoDecoder</code> (WebCodecs) gedecodeerd en
+       de frames worden rechtstreeks op dit canvas getekend. Dit is de route die blijft werken als de browser
+       HTMLMediaElement diep blokkeert. Alleen video; audio zou via <code>AudioDecoder</code> + Web Audio moeten.</p>
+    <canvas id="wcCanvas" width="640" height="360"></canvas>
+    <div class="controls"><button id="btnWc">▶ Start WebCodecs-methode</button></div>
+    <div class="status wait" id="status-wc">⏸ wacht</div>
+  </section>
+
+  <section class="card">
+    <h2>Simulatie: browser zonder (volledige) video-ondersteuning</h2>
+    <p>Vink blokkades aan om lokaal te testen hoe de methodes hierboven presteren in een browser die (deels) geen
+       video toelaat. De patches zijn actief vóór elke klik op een startknop en blijven na herladen bestaan
+       (opgeslagen in localStorage). Ze bootsen na wat pagina-JavaScript zou waarnemen: afgewezen
+       <code>play()</code>, ontbrekende API's, geblokkeerde media-URL's.</p>
+    <div class="sim-grid">
+      <label><input type="checkbox" id="sim-play"> <code>play()</code> laten falen</label>
+      <label><input type="checkbox" id="sim-mediasource"> <code>MediaSource</code> verwijderen (MSE)</label>
+      <label><input type="checkbox" id="sim-webcodecs"> <code>VideoDecoder</code> verwijderen (WebCodecs)</label>
+      <label><input type="checkbox" id="sim-webrtc"> <code>RTCPeerConnection</code> verwijderen</label>
+      <label><input type="checkbox" id="sim-netwerk"> Netwerkfilter op media-URL's</label>
+      <label><input type="checkbox" id="sim-verbergen"> <code>&lt;video&gt;</code>'s verbergen (CSS)</label>
+    </div>
+    <div class="controls"><button id="btnSimReset">Herstel alles en herlaad</button></div>
+    <div class="status wait" id="status-sim">⏸ geen blokkade actief</div>
+    <p class="hint">Grens van de simulatie: een blokkade die diep ín de browser-engine zit (bijv. codecs uitgeschakeld
+       in de mediapipeline) valt niet vanuit JavaScript na te bootsen — daarvoor zou je een aangepaste browserbinary
+       nodig hebben. De ingebouwde play-knop van een <code>&lt;video&gt;</code>-element zelf kan een ge-patchte
+       <code>play()</code> soms omzeilen; de startknoppen op deze pagina niet.</p>
+  </section>
+
+</main>
+
+<script>
+/* Simulatie-engine: reversible patches die een blokkerende browser nabootsen. */
+(function () {
+  const KEY = 'videotest-sim-v1';
+  const BLOCKS = {
+    play: {
+      label: 'play() faalt',
+      enable() {
+        const orig = HTMLMediaElement.prototype.play;
+        HTMLMediaElement.prototype.play = function () {
+          return Promise.reject(new DOMException('Simulatie: video-afspelen is geblokkeerd', 'NotAllowedError'));
+        };
+        return () => { HTMLMediaElement.prototype.play = orig; };
+      }
+    },
+    mediasource: {
+      label: 'MediaSource verwijderd',
+      enable() {
+        const orig = window.MediaSource;
+        try { delete window.MediaSource; } catch (e) { window.MediaSource = undefined; }
+        return () => { window.MediaSource = orig; };
+      }
+    },
+    webcodecs: {
+      label: 'VideoDecoder verwijderd',
+      enable() {
+        const orig = window.VideoDecoder;
+        try { delete window.VideoDecoder; } catch (e) { window.VideoDecoder = undefined; }
+        return () => { window.VideoDecoder = orig; };
+      }
+    },
+    webrtc: {
+      label: 'RTCPeerConnection verwijderd',
+      enable() {
+        const orig = window.RTCPeerConnection;
+        try { delete window.RTCPeerConnection; } catch (e) { window.RTCPeerConnection = undefined; }
+        return () => { window.RTCPeerConnection = orig; };
+      }
+    },
+    netwerk: {
+      label: 'media-URL’s geblokkeerd',
+      enable() {
+        const BLOCKED = /\.(m3u8|mpd|mp4|m4s|ts|webm|mov|mkv|aac|mp3|opus)(\?|#|$)/i;
+        const ofetch = window.fetch;
+        window.fetch = function (input, init) {
+          const url = typeof input === 'string' ? input : (input && input.url) || '';
+          if (BLOCKED.test(url)) return Promise.reject(new TypeError('Simulatie: media-URL geblokkeerd: ' + url));
+          return ofetch.call(this, input, init);
+        };
+        const oopen = XMLHttpRequest.prototype.open;
+        const osend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.open = function () {
+          if (BLOCKED.test(String(arguments[1]))) this.__simBlok = true;
+          return oopen.apply(this, arguments);
+        };
+        XMLHttpRequest.prototype.send = function () {
+          if (this.__simBlok) {
+            const self = this;
+            setTimeout(function () { self.abort(); }, 0);
+            return;
+          }
+          return osend.apply(this, arguments);
+        };
+        return () => {
+          window.fetch = ofetch;
+          XMLHttpRequest.prototype.open = oopen;
+          XMLHttpRequest.prototype.send = osend;
+        };
+      }
+    },
+    verbergen: {
+      label: '<video> verborgen (CSS)',
+      enable() {
+        const st = document.createElement('style');
+        st.textContent = 'video{display:none !important}';
+        document.head.appendChild(st);
+        return () => st.remove();
+      }
+    }
+  };
+
+  let state = {};
+  try { state = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { state = {}; }
+  const active = {};
+
+  function applyAll() {
+    for (const name of Object.keys(BLOCKS)) {
+      const on = !!state[name];
+      if (on && !active[name]) active[name] = BLOCKS[name].enable();
+      if (!on && active[name]) { active[name](); delete active[name]; }
+      const cb = document.getElementById('sim-' + name);
+      if (cb) cb.checked = on;
+    }
+    const names = Object.keys(BLOCKS).filter(n => state[n]);
+    const el = document.getElementById('status-sim');
+    el.className = 'status ' + (names.length ? 'err' : 'wait');
+    el.textContent = names.length
+      ? '✗ geblokkeerd: ' + names.map(n => BLOCKS[n].label).join(' · ')
+      : '⏸ geen blokkade actief';
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    for (const name of Object.keys(BLOCKS)) {
+      const cb = document.getElementById('sim-' + name);
+      if (!cb) continue;
+      cb.addEventListener('change', function () {
+        state[name] = cb.checked;
+        localStorage.setItem(KEY, JSON.stringify(state));
+        applyAll();
+      });
+    }
+    const reset = document.getElementById('btnSimReset');
+    if (reset) reset.addEventListener('click', function () {
+      localStorage.removeItem(KEY);
+      location.reload();
+    });
+    applyAll();
+  });
+})();
+</script>
+
+<video id="hiddenVideo" class="hidden-video" muted playsinline crossorigin="anonymous"></video>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function setStatus(id, state, msg) {
+  const el = $(id);
+  el.classList.remove('ok', 'err', 'wait');
+  el.classList.add(state);
+  const icon = { ok: '✓', err: '✗', wait: '⏸' }[state];
+  el.textContent = icon + ' ' + msg;
+}
+
+let channels = [];
+let selectedChannel = null;
+function parsePlaylist(text, base) {
+  const result = [];
+  let meta = null;
+  if (!text.trimStart().startsWith('#EXTM3U')) throw new Error('Dit is geen M3U-lijst.');
+  if (/^#EXT-X-/m.test(text)) throw new Error('Dit is een HLS-stream, geen kanalenlijst. Gebruik het HLS-streamveld.');
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith('#EXTINF:')) {
+      // Metadata can contain commas inside quoted attributes.
+      let quoted = false, split = -1;
+      for (let i = 0; i < line.length; i++) { if (line[i] === '"') quoted = !quoted; if (line[i] === ',' && !quoted) { split = i; break; } }
+      meta = {name: split >= 0 ? line.slice(split + 1).trim() : '', group: (line.match(/group-title="([^"]*)"/i) || [,''])[1]};
+    } else if (line && !line.startsWith('#')) {
+      try {
+        const url = new URL(line, base);
+        if (!['http:', 'https:'].includes(url.protocol)) { meta = null; continue; }
+        result.push({name: meta?.name || 'Kanaal ' + (result.length + 1), group: meta?.group || '', url: url.href});
+      } catch {}
+      meta = null;
+    }
+  }
+  return result;
+}
+function renderChannels() {
+  const query = $('channelSearch').value.toLocaleLowerCase();
+  const select = $('channelSelect');
+  select.replaceChildren();
+  channels.forEach((channel, index) => {
+    if (!(channel.name + ' ' + channel.group).toLocaleLowerCase().includes(query)) return;
+    const option = new Option(channel.name + (channel.group ? ' — ' + channel.group : ''), String(index));
+    option.selected = channel === selectedChannel;
+    select.add(option);
+  });
+  if (!selectedChannel || ![...select.options].some(o => o.selected)) select.selectedIndex = -1;
+  setStatus('playlistStatus', 'ok', select.options.length + ' van ' + channels.length + ' kanalen zichtbaar');
+}
+$('loadPlaylist').addEventListener('click', async () => {
+  const button = $('loadPlaylist');
+  button.disabled = true;
+  setStatus('playlistStatus', 'wait', 'Kanalenlijst ophalen…');
+  try {
+    const url = new URL($('playlistUrl').value.trim());
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Gebruik een http(s)-URL.');
+    const response = await fetch('/playlist?url=' + encodeURIComponent(url.href));
+    if (!response.ok) throw new Error(await response.text());
+    const parsed = parsePlaylist(await response.text(), url.href);
+    if (!parsed.length) throw new Error('Geen http(s)-kanalen gevonden.');
+    channels = parsed; selectedChannel = null;
+    $('channelSearch').disabled = $('channelSelect').disabled = false;
+    $('channelSearch').value = '';
+    $('selectedChannel').textContent = 'Kies een kanaal om de tests daarop in te stellen.';
+    renderChannels();
+  } catch (error) { setStatus('playlistStatus', 'err', error.message); }
+  finally { button.disabled = false; }
+});
+$('channelSearch').addEventListener('input', renderChannels);
+$('channelSelect').addEventListener('change', () => {
+  const channel = channels[Number($('channelSelect').value)];
+  if (!channel) return;
+  selectedChannel = channel;
+  $('hlsUrl').value = channel.url;
+  $('mp4Url').value = channel.url;
+  $('baseVideo').pause();
+  $('baseVideo').src = channel.url;
+  $('baseVideo').load();
+  drawRunning = false;
+  if (canvasHls) { canvasHls.destroy(); canvasHls = null; }
+  if (mseHls) { mseHls.destroy(); mseHls = null; }
+  $('hiddenVideo').pause(); $('mseVideo').pause();
+  if (wcAbort) wcAbort.abort();
+  $('selectedChannel').textContent = 'Gekozen: ' + channel.name + '. Start hieronder de gewenste test.';
+  for (const id of ['status-baseline', 'status-canvas', 'status-mse', 'status-wc']) setStatus(id, 'wait', channel.name + ' — klaar om te testen');
+});
+
+/* ---------- 0. Referentie ---------- */
+const baseVideo = $('baseVideo');
+baseVideo.addEventListener('playing', () =>
+  setStatus('status-baseline', 'ok', 'standaard <video> speelt — blokkade ligt niet op dit pad'));
+baseVideo.addEventListener('error', () =>
+  setStatus('status-baseline', 'err', 'fout op het <video>-element (code ' + (baseVideo.error ? baseVideo.error.code : '?') + ')'));
+
+/* ---------- 1. Canvas-methode ---------- */
+let canvasHls = null;
+let drawRunning = false;
+
+function paintLoop(video, canvas) {
+  const ctx = canvas.getContext('2d');
+  drawRunning = true;
+  const step = () => {
+    if (!drawRunning) return;
+    if (video.readyState >= 2 && !video.paused && !video.ended) {
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    }
+    if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+      video.requestVideoFrameCallback(() => step());
+    } else {
+      requestAnimationFrame(step);
+    }
+  };
+  step();
+}
+
+$('btnCanvas').addEventListener('click', () => {
+  const url = $('hlsUrl').value.trim();
+  const video = $('hiddenVideo');
+  drawRunning = false;
+  if (canvasHls) { canvasHls.destroy(); canvasHls = null; }
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+  setStatus('status-canvas', 'wait', 'stream laden in verborgen <video>…');
+  video.addEventListener('playing', () =>
+    setStatus('status-canvas', 'ok', 'speelt — beeld loopt op het canvas, het <video>-element blijft verborgen'), { once: true });
+
+  if (window.Hls && Hls.isSupported()) {
+    canvasHls = new Hls();
+    canvasHls.loadSource(url);
+    canvasHls.attachMedia(video);
+    canvasHls.on(Hls.Events.MANIFEST_PARSED, () => {
+      paintLoop(video, $('cv'));
+      video.play().catch(e => setStatus('status-canvas', 'err', 'play() geweigerd: ' + e.message));
+    });
+    canvasHls.on(Hls.Events.ERROR, (e, data) => {
+      if (data.fatal) setStatus('status-canvas', 'err',
+        'hls.js-fout (' + data.type + ' / ' + data.details + ') — staat CORS op de streamserver toe?');
+    });
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = url;
+    paintLoop(video, $('cv'));
+    video.play().catch(e => setStatus('status-canvas', 'err', 'play() geweigerd: ' + e.message));
+  } else {
+    setStatus('status-canvas', 'err', 'geen HLS-ondersteuning (hls.js onbeschikbaar én geen native HLS)');
+  }
+});
+
+/* ---------- 2. MSE-methode ---------- */
+let mseHls = null;
+
+$('btnMse').addEventListener('click', () => {
+  const url = $('hlsUrl').value.trim();
+  const video = $('mseVideo');
+  if (mseHls) { mseHls.destroy(); mseHls = null; }
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+  setStatus('status-mse', 'wait', 'segmenten laden via MediaSource…');
+
+  if (!window.Hls || !Hls.isSupported()) {
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      setStatus('status-mse', 'err', 'hls.js niet beschikbaar en deze browser claimt native HLS — buiten scope van de MSE-test');
+    } else {
+      setStatus('status-mse', 'err', 'hls.js/MSE niet ondersteund in deze browser');
+    }
+    return;
+  }
+  mseHls = new Hls({ enableWorker: true });
+  mseHls.loadSource(url);
+  mseHls.attachMedia(video);
+  mseHls.on(Hls.Events.MANIFEST_PARSED, () =>
+    video.play().catch(e => setStatus('status-mse', 'err', 'play() geweigerd: ' + e.message)));
+  mseHls.on(Hls.Events.ERROR, (e, data) => {
+    if (data.fatal) setStatus('status-mse', 'err', 'fatale MSE-fout: ' + data.type + ' / ' + data.details);
+  });
+  video.addEventListener('playing', () =>
+    setStatus('status-mse', 'ok', 'speelt via MediaSource — het element heeft geen directe stream-src'), { once: true });
+});
+
+/* ---------- 3. WebRTC / MediaStream ---------- */
+let genStream = null;
+let genRunning = false;
+let whepPc = null;
+
+function stopLocalStream() {
+  genRunning = false;
+  if (genStream) { genStream.getTracks().forEach(t => t.stop()); genStream = null; }
+}
+
+function stopWhep() {
+  if (whepPc) { whepPc.close(); whepPc = null; }
+}
+
+$('btnRtcLocal').addEventListener('click', () => {
+  stopWhep();
+  stopLocalStream();
+  const rtcVideo = $('rtcVideo');
+  rtcVideo.srcObject = null;
+
+  const c = document.createElement('canvas');
+  c.width = 640; c.height = 360;
+  const ctx = c.getContext('2d');
+  genRunning = true;
+  const render = () => {
+    if (!genRunning) return;
+    const t = performance.now() / 1000;
+    const g = ctx.createLinearGradient(0, 0, 640, 360);
+    g.addColorStop(0, 'hsl(' + ((t * 40) % 360) + ', 70%, 30%)');
+    g.addColorStop(1, 'hsl(' + ((t * 40 + 120) % 360) + ', 70%, 20%)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 640, 360);
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(320 + Math.sin(t) * 220, 180 + Math.cos(t * 1.3) * 100, 28, 0, 7);
+    ctx.fill();
+    ctx.font = '20px monospace';
+    ctx.fillText('MediaStream (canvas.captureStream)  ' + new Date().toLocaleTimeString(), 16, 336);
+    requestAnimationFrame(render);
+  };
+  render();
+
+  genStream = c.captureStream(30);
+  rtcVideo.addEventListener('playing', () =>
+    setStatus('status-rtc', 'ok', 'lokale MediaStream speelt via srcObject — geen <video src> aanwezig'), { once: true });
+  rtcVideo.srcObject = genStream;
+  setStatus('status-rtc', 'wait', 'MediaStream starten…');
+  rtcVideo.play().catch(e => setStatus('status-rtc', 'err', 'play() geweigerd: ' + e.message));
+});
+
+$('btnWhep').addEventListener('click', async () => {
+  const url = $('whepUrl').value.trim();
+  if (!url) { setStatus('status-rtc', 'err', 'vul eerst een WHEP-endpoint in'); return; }
+  if (typeof RTCPeerConnection === 'undefined') {
+    setStatus('status-rtc', 'err', 'RTCPeerConnection niet beschikbaar (gesimuleerd of echt)');
+    return;
+  }
+  stopLocalStream();
+  stopWhep();
+  setStatus('status-rtc', 'wait', 'RTCPeerConnection opzetten…');
+
+  const pc = new RTCPeerConnection();
+  whepPc = pc;
+  const rtcVideo = $('rtcVideo');
+  rtcVideo.srcObject = null;
+
+  pc.addTransceiver('video', { direction: 'recvonly' });
+  pc.ontrack = (e) => {
+    rtcVideo.srcObject = e.streams[0];
+    rtcVideo.play().catch(() => {});
+    setStatus('status-rtc', 'ok', 'remote track ontvangen — stream speelt via srcObject');
+  };
+  pc.onconnectionstatechange = () => {
+    if (whepPc === pc && ['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
+      setStatus('status-rtc', 'err', 'verbinding ' + pc.connectionState);
+    }
+  };
+
+  try {
+    await pc.setLocalDescription(await pc.createOffer());
+    await new Promise((resolve, reject) => {
+      if (pc.iceGatheringState === 'complete') { resolve(); return; }
+      const to = setTimeout(() => { cleanup(); reject(new Error('ICE-gathering timeout')); }, 8000);
+      const cleanup = () => { clearTimeout(to); pc.removeEventListener('icegatheringstatechange', onIce); };
+      const onIce = () => {
+        if (pc.iceGatheringState === 'complete') { cleanup(); resolve(); }
+      };
+      pc.addEventListener('icegatheringstatechange', onIce);
+    });
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/sdp' },
+      body: pc.localDescription.sdp
+    });
+    if (!resp.ok) throw new Error('WHEP-server antwoordde HTTP ' + resp.status);
+    await pc.setRemoteDescription({ type: 'answer', sdp: await resp.text() });
+  } catch (e) {
+    if (whepPc === pc) setStatus('status-rtc', 'err', 'WHEP mislukt: ' + e.message);
+  }
+});
+
+/* ---------- 4. WebCodecs (geen <video>-element in dit pad) ---------- */
+let wcAbort = null;
+
+function wcExtradata(mp4file, track) {
+  const trak = mp4file.getTrackById(track.id);
+  if (!trak) return null;
+  for (const entry of trak.mdia.minf.stbl.stsd.entries) {
+    const box = entry.avcC || entry.hvcC || entry.vpcC || entry.av1C;
+    if (box) {
+      const DS = typeof DataStream !== 'undefined' ? DataStream : MP4Box.DataStream;
+      const stream = new DS(undefined, 0, DS.BIG_ENDIAN);
+      box.write(stream);
+      return new Uint8Array(stream.buffer, 8);
+    }
+  }
+  return null;
+}
+
+$('btnWc').addEventListener('click', async () => {
+  const url = $('mp4Url').value.trim();
+  if (selectedChannel && !/\.mp4(?:[?#]|$)/i.test(url)) { setStatus('status-wc', 'err', 'Dit kanaal is geen herkenbare progressieve MP4. Deze WebCodecs-test ondersteunt geen HLS of MPEG-TS.'); return; }
+  const canvas = $('wcCanvas');
+  const ctx = canvas.getContext('2d');
+  if (typeof VideoDecoder === 'undefined') {
+    setStatus('status-wc', 'err', 'WebCodecs (VideoDecoder) niet beschikbaar — vereist secure context (https/localhost) én browser-ondersteuning');
+    return;
+  }
+  if (typeof MP4Box === 'undefined') {
+    setStatus('status-wc', 'err', 'mp4box.js niet geladen — is de CDN bereikbaar?');
+    return;
+  }
+  if (wcAbort) wcAbort.abort();
+  const ac = new AbortController();
+  wcAbort = ac;
+
+  setStatus('status-wc', 'wait', 'MP4 ophalen…');
+  let decoder = null;
+  const pending = [];
+  let baseTs = null, basePerf = null, ended = false, drawn = 0;
+
+  const renderLoop = () => {
+    if (ac.signal.aborted) return;
+    if (baseTs !== null) {
+      const nowUs = (performance.now() - basePerf) * 1000;
+      while (pending.length && pending[0].timestamp <= nowUs) {
+        const f = pending.shift();
+        if (canvas.width !== f.displayWidth || canvas.height !== f.displayHeight) {
+          canvas.width = f.displayWidth;
+          canvas.height = f.displayHeight;
+        }
+        ctx.drawImage(f, 0, 0);
+        f.close();
+        drawn++;
+      }
+    }
+    if (ended && pending.length === 0) {
+      setStatus('status-wc', 'ok', 'klaar — ' + drawn + ' frames gedecodeerd en getekend, zonder enkel <video>-element');
+      return;
+    }
+    requestAnimationFrame(renderLoop);
+  };
+
+  try {
+    const resp = await fetch(url, { signal: ac.signal });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const buf = await resp.arrayBuffer();
+    if (ac.signal.aborted) return;
+
+    setStatus('status-wc', 'wait', 'demuxen en decoderen…');
+    const file = MP4Box.createFile();
+    file.onError = (e) => { if (!ac.signal.aborted) setStatus('status-wc', 'err', 'mp4box-fout: ' + e); };
+    file.onReady = (info) => {
+      const t = info.videoTracks && info.videoTracks[0];
+      if (!t) { setStatus('status-wc', 'err', 'geen videotrack gevonden in deze MP4'); return; }
+      const cfg = {
+        codec: t.codec,
+        codedWidth: t.video.width,
+        codedHeight: t.video.height,
+        optimizeForLatency: true
+      };
+      const extradata = wcExtradata(file, t);
+      if (extradata) cfg.description = extradata;
+      try {
+        decoder = new VideoDecoder({
+          output: (frame) => {
+            if (baseTs === null) { baseTs = frame.timestamp; basePerf = performance.now(); }
+            pending.push(frame);
+          },
+          error: (e) => { if (!ac.signal.aborted) setStatus('status-wc', 'err', 'decoder-fout: ' + e.message); }
+        });
+        decoder.configure(cfg);
+      } catch (e) {
+        setStatus('status-wc', 'err', 'codec niet configureerbaar (' + (cfg.codec || 'onbekend') + '): ' + e.message);
+        return;
+      }
+      file.setExtractionOptions(t.id, null, { nbSamples: 100000 });
+      file.onSamples = (id, user, samples) => {
+        for (const s of samples) {
+          decoder.decode(new EncodedVideoChunk({
+            type: s.is_sync ? 'key' : 'delta',
+            timestamp: Math.round(1e6 * s.cts / s.timescale),
+            duration: Math.round(1e6 * s.duration / s.timescale),
+            data: s.data
+          }));
+        }
+      };
+      file.start();
+      requestAnimationFrame(renderLoop);
+    };
+    buf.fileStart = 0;
+    file.appendBuffer(buf);
+    file.flush();
+    if (decoder) {
+      await decoder.flush();
+      ended = true;
+    }
+  } catch (e) {
+    if (!ac.signal.aborted) setStatus('status-wc', 'err', 'fout: ' + e.message);
+  }
+});
+</script>
+
+</body>
+</html>

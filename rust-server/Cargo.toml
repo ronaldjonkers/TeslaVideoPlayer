@@ -1,0 +1,5 @@
+[package]
+name = "videotest-server"
+version = "0.1.0"
+edition = "2021"
+description = "Serveert de video-methoden testpagina op http://localhost:8000"

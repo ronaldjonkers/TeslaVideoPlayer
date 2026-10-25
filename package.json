@@ -1,0 +1,1 @@
+{"name":"tesla-video-player","private":true,"type":"module","scripts":{"start":"node stream-lab/server.mjs","test":"node --test stream-lab/*.test.mjs","test:e2e":"node verify/media-e2e.mjs"},"engines":{"node":">=22.13"}}

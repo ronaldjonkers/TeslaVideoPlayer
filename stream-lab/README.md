@@ -1,4 +1,4 @@
-# Ronald Media / TeslaVideoPlayer
+# Tesla Media / TeslaVideoPlayer
 
 De actuele gebruikersapplicatie. Zie [de hoofd-README](../README.md) voor installatie, accounts, tests en bronbeheer.
 

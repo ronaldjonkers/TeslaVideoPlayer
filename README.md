@@ -1,6 +1,6 @@
-# TeslaVideoPlayer
+# Tesla Media · TeslaVideoPlayer
 
-Een persoonlijke mediaspeler met een minimalistische, op Tesla geïnspireerde interface. Beeld wordt op canvas getekend; geluid loopt via een audio-element. Er wordt geen video-element gebruikt.
+Tesla Media is een persoonlijke mediaspeler, vernoemd naar Nikola Tesla, met een rustige minimalistische interface. Beeld wordt op canvas getekend; geluid loopt via een audio-element. Er wordt geen video-element gebruikt.
 
 - Persoonlijke accounts met serveropslag voor instellingen, speellijsten en favorieten.
 - TV: meerdere M3U-speellijsten, zoeken, groepen, kanaalkaarten met logo’s en een aparte speler met favorieten.

@@ -82,5 +82,5 @@ const server=http.createServer(async(req,res)=>{
  }catch(error){if(!res.headersSent){const message=error.name==='TimeoutError'?'De bron reageert niet op tijd. Probeer opnieuw.':error.message;const safe=/https?:|password=|username=|SQLITE|ENOENT|fetch failed|Unexpected/.test(message)?'De bron is niet bereikbaar of de gegevens zijn ongeldig.':message;json(res,400,{error:safe});}else res.destroy();}
 });
 server.on('error',error=>{console.error('Server kan niet starten ('+error.code+').');process.exitCode=1;});
-server.listen(port,host,()=>console.log(`Ronald Media: http://${host}:${server.address().port}`));
+server.listen(port,host,()=>console.log(`Tesla Media: http://${host}:${server.address().port}`));
 for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{playback.closeAll();server.close(()=>{store.close();process.exit();});setTimeout(()=>process.exit(),3000).unref();});

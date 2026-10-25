@@ -48,6 +48,7 @@ sh install.sh --plan --domain media.example.com --email beheerder@example.com
 | [Reverse proxy](docs/REVERSE-PROXY.md) | Handmatige Nginx/Caddy-configuraties en streamingheaders |
 | [Integraties](docs/INTEGRATIONS.md) | Plex en YouTube, advertentiegedrag, beperkingen en Netflix |
 | [Problemen oplossen](docs/TROUBLESHOOTING.md) | Gerichte controles en wat de tests wel/niet aantonen |
+| [Plex subtitles](docs/SUBTITLES.md) | Subtitle selection, language preferences and supported formats |
 | [Code-indeling](stream-lab/README.md) | Onderdelen van de applicatie |
 
 ## Lokaal ontwikkelen

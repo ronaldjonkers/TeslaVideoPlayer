@@ -8,7 +8,7 @@ Tesla Media laadt HTTP(S)-speellijsten en verwerkt mediabronnen via FFmpeg. M3U-
 
 Aanmelden gebeurt met de Plex PIN-flow, of met een handmatig token. Serververzoeken, posters en mediabestanden worden via de app-server opgehaald. Tokens worden niet in afspeellinks naar de browser gestuurd.
 
-Ondersteund: filmbibliotheken, series/seizoenen/afleveringen, zoeken, recent toegevoegd, verder kijken, lokale kijkposities en Plex-tijdlijnupdates. De eerste beschikbare mediapart wordt afgespeeld. Er zijn geen ondertitelkeuze, alternatieve audio-trackkeuze, casting of volledige Plex Home-profielkeuze ingebouwd. DRM-beveiligde bronnen worden niet ontsleuteld.
+Ondersteund: filmbibliotheken, series/seizoenen/afleveringen, zoeken, recent toegevoegd, verder kijken, lokale kijkposities en Plex-tijdlijnupdates. De eerste beschikbare mediapart wordt afgespeeld. Plex subtitle selection and per-account language preferences are supported; see [Plex subtitles](SUBTITLES.md). Alternative audio-track selection, casting and full Plex Home profile selection are not implemented. DRM-beveiligde bronnen worden niet ontsleuteld.
 
 Posters: de app gebruikt de echte poster uit Plex. Wanneer lijstmetadata onvolledig is, vraagt de afbeeldingsroute volledige itemmetadata en zo nodig de bovenliggende metadata op. Server- en browserfallbacks voorkomen een lege tegel; ontbrekende bronposters worden expliciet gemeld.
 
